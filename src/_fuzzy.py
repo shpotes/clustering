@@ -10,17 +10,12 @@ def get_cluster(points, membership, m):
         membership[..., jnp.newaxis] ** m * points, axis=1
     ) / jnp.sum(membership, axis=1)[0]
 
-@partial(jax.jit, static_argnums=(0,))
-def improve_membership(params, val):
-    membership, points, _, old_cost = val
-    norm_ord, m = params
-
-    cluster = get_cluster(points, membership, m)
-
+@partial(jax.jit, static_argnums=(3,))
+def update_membership(points, cluster, membership, m):
     c, num_dims = cluster.shape
-
+    
     dist = jnp.linalg.norm(
-        (cluster.reshape(c, 1, num_dims) - x),
+        (cluster.reshape(c, 1, num_dims) - points),
         ord=norm_ord, axis=2
     )
 
@@ -30,6 +25,17 @@ def improve_membership(params, val):
     tmp_dist /= tmp_dist.sum(axis=0)
     new_membership = 1 / tmp_dist
     new_membership /= new_membership.sum(axis=0)
+
+    return new_membership
+
+
+@partial(jax.jit, static_argnums=(0,))
+def improve_membership(params, val):
+    membership, points, _, old_cost = val
+    norm_ord, m = params
+
+    cluster = get_cluster(points, membership, m)
+    new_membership = update_membership(points, cluster, membership, m)
 
     return new_membership, points, old_cost, new_cost
 
@@ -41,7 +47,7 @@ def cmeans(key, points, c, norm_ord=2, tol=1e-5):
     membership /= membership.sum(axis=0)
 
     initial_val = (membership, points, jnp.inf, 0.)
-    params = (c, norm_ord)
+    params = (norm_ord, m)
 
     state = jax.lax.while_loop(
         lambda val: abs(val[-1] - val[-2]) > tol,
@@ -68,3 +74,10 @@ class CMeans(ClusterMixin, BaseEstimator):
         self.cluster, self.membership, _, self.cost = state
 
         return self
+
+    def fit_predict(self, X):
+        return self.fit(X).predict(X)
+
+    def predict(self, X):
+        return self.cluster, update_membership(X, self.cluster, self.membership, m)
+        
