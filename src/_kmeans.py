@@ -68,12 +68,14 @@ class KMeans(ClusterMixin, BaseEstimator):
         self._key = jax.random.PRNGKey(random_state)
 
     def fit(self, X):
-        self.labels_, _ = _kmeans_run(self._key, X, self.n_clusters,
+        self.codebook, _ = _kmeans_run(self._key, X, self.n_clusters,
                                       self._norm_ord, thresh=self._tol)
         return self
 
+    def fit_predict(self, x):
+        self.fit(x).predict(x)
+
     def predict(self, X):
-        # check_is_fitted(self)
         assignment, _ = _vector_quantize(X, self.codebook, 2)
         return assignment
 
@@ -88,10 +90,13 @@ class KMeansPlusPlus(ClusterMixin, BaseEstimator):
         self._key = jax.random.PRNGKey(random_state)
 
     def fit(self, X):
-        self.labels_, _ = _kmeans(self._key, X, self.n_clusters,
+        self.codebook, _ = _kmeans(self._key, X, self.n_clusters,
                                   self._norm_ord, self.num_seeds,
                                   thresh=self._tol)
         return self
+
+    def fit_predit(self, x):
+        self.fit(x).predict(x)
 
     def predict(self, X):
         assignment, _ = _vector_quantize(X, self.codebook, 2)
