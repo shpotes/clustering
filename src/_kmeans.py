@@ -73,7 +73,7 @@ class KMeans(ClusterMixin, BaseEstimator):
         return self
 
     def fit_predict(self, x):
-        self.fit(x).predict(x)
+        return self.fit(x).predict(x)
 
     def predict(self, X):
         assignment, _ = _vector_quantize(X, self.codebook, 2)
@@ -96,7 +96,7 @@ class KMeansPlusPlus(ClusterMixin, BaseEstimator):
         return self
 
     def fit_predit(self, x):
-        self.fit(x).predict(x)
+        return self.fit(x).predict(x)
 
     def predict(self, X):
         assignment, _ = _vector_quantize(X, self.codebook, 2)
