@@ -26,10 +26,14 @@ def initialize(X, gran=5, precision=16):
 
     return prototypes, X
 
-@partial(jax.jit, static_argnums=(2, 3,))
-def mountain_function(prototypes, x, norm_ord, sigma):
-    norm = partial(jnp.linalg.norm, ord=norm_ord)
-    return jnp.exp(-norm((prototypes - x), axis=1) / (2 * sigma ** 2)).sum(axis=0)
+@partial(jax.jit, static_argnums=(2,))
+def mountain_function(prototypes, x, sigma):
+    points_norm = jnp.linalg.norm(x, ord=2, axis=1)
+    grid_norm = jnp.linalg.norm(prototypes, ord=2, axis=1)
+
+    cosine = (x * prototypes).sum(axis=1) / (points_norm * grid_norm)
+
+    return jnp.exp(cosine / (2 * sigma ** 2)).sum(axis=0)
 
 @jax.jit
 def get_cluster(prototypes, prototypes_density):
@@ -51,7 +55,7 @@ def stop(thresh, initial_state, state):
 @partial(jax.jit, static_argnums=(0,))
 def mountain_update(params, val):
     prototypes, clusters, X, idx, prototypes_density, cluster_density = val
-    norm_ord, sigma, beta = params
+    sigma, beta = params
     num_dims = prototypes.shape[1]
 
     cluster = jnp.expand_dims(
@@ -61,14 +65,16 @@ def mountain_update(params, val):
 
     idx += 1
 
+    prototype_norm = jnp.linalg.norm(prototypes[0], ord=2, axis=0)
+    cluster_norm = jnp.linalg.norm(cluster[0], ord=2, axis=0)
+
     cluster_mass = jnp.exp(
-        -jnp.linalg.norm(
-            prototypes[0] - cluster[0],
-            ord=norm_ord, axis=0
-        ) / (2 * beta ** 2)
+        -jnp.sum(
+            prototypes[0] * cluster[0], axis=0
+        ) / (cluster_norm * prototype_norm) / (2 * beta ** 2)
     )
 
-    near_cluster_density = mountain_function(cluster, X, norm_ord, sigma) * cluster_mass
+    near_cluster_density = mountain_function(cluster, X, sigma) * cluster_mass
 
     new_prototypes_density = prototypes_density - near_cluster_density
     new_cluster, cluster_density = get_cluster(prototypes, new_prototypes_density)
@@ -78,14 +84,14 @@ def mountain_update(params, val):
 
     return val
 
-@partial(jax.jit, static_argnums=(1, 2, 3, 4, 5, 6))
-def mountain_run(X, norm_ord, sigma, beta, gran, thresh, precision):
+@partial(jax.jit, static_argnums=(1, 2, 3, 4, 5))
+def mountain_run(X, sigma, beta, gran, thresh, precision):
     prototypes, X = initialize(X, gran, precision)
-    prototypes_density = mountain_function(prototypes, X, norm_ord, sigma)
+    prototypes_density = mountain_function(prototypes, X, sigma)
     cluster, cluster_density = get_cluster(prototypes, prototypes_density)
 
     idx = 0
-    params = (norm_ord, sigma, beta)
+    params = (sigma, beta)
 
     clusters = jnp.squeeze(jnp.zeros_like(X)) + jnp.nan
 
@@ -107,12 +113,11 @@ def mountain_run(X, norm_ord, sigma, beta, gran, thresh, precision):
 
 
 class Mountain(ClusterMixin, BaseEstimator):
-    def __init__(self, norm_ord=2, sigma=0.1, beta=0.1, precision=16,
+    def __init__(self, sigma=0.1, beta=0.1, precision=16,
                  gran=5, tol=0.01, random_state=42):
 
         assert precision in {16, 32}, 'wrong precision'
 
-        self.norm_ord = norm_ord
         self.sigma = sigma
         self.beta = beta
         self.gran = gran
@@ -122,7 +127,7 @@ class Mountain(ClusterMixin, BaseEstimator):
 
     def fit(self, X):
         prototypes, clusters, _, idx, prototypes_density, cluster_density = mountain_run(
-            X, self.norm_ord, self.sigma, self.beta, self.gran, self.tol, self.precision
+            X, self.sigma, self.beta, self.gran, self.tol, self.precision
         )
         self.prototypes = prototypes
         self.clusters = clusters[:idx+1]
@@ -134,9 +139,14 @@ class Mountain(ClusterMixin, BaseEstimator):
         return self.fit(X).predict(X)
 
     def predict(self, X):
-        norm = partial(jnp.linalg.norm, ord=self.norm_ord)
-        assignment = jax.vmap(
-            lambda points: jnp.argmin(jax.vmap(norm)(self.clusters - points))
-        )(X)
-        self.labels_ = onp.array(assignment)
+        clusters_norm = jnp.linalg.norm(
+            moun.clusters, ord=2, axis=1
+        )[:, jnp.newaxis]
+        points_norm = jnp.linalg.norm(X, ord=2, axis=1)
+
+        assignment = jnp.argmin(
+            (moun.clusters @ X.T) / (clusters_norm * points_norm),
+            axis=0
+        )
+
         return assignment
