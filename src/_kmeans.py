@@ -3,22 +3,39 @@ import jax
 import jax.numpy as jnp
 from sklearn.base import ClusterMixin, BaseEstimator
 from sklearn.utils.validation import check_is_fitted
+from .utils import cosine_similarity
 
-@partial(jax.jit, static_argnums=(2,))
-def _vector_quantize(points, codebook, norm_ord):
-    norm = partial(jnp.linalg.norm, ord=norm_ord)
-    assignment = jax.vmap(
-        lambda point: jnp.argmin(jax.vmap(norm)(codebook - point))
-    )(points)
-    distns = jax.vmap(norm)(codebook[assignment,:] - points)
+
+@jax.jit
+def _vector_quantize(points, codebook):
+    """
+    Quantize a set of given points according to a set of given codebooks
+
+    Parameters
+    ----------
+    points : float[N, M]
+        Points to be quantize (N points, M dimensions)
+    prototypes : float[Np, M]
+        Codebook prototypes (N prototypes, M dimensions)
+
+    Returns
+    -------
+    assignment : int[N]
+        The corresponding codebook for each point
+    distns : float[N]
+        The corresponding distance between each point and its codebook
+    """
+    dist_matrix = 1 - cosine_similarity(points, codebook, norm_axis=1)
+    assignment = jnp.argmin(dist_matrix, axis=1)
+    distns = dist_matrix[jnp.arange(len(assignment)), assignment]
+
     return assignment, distns
 
-@partial(jax.jit, static_argnums=(2,3,))
-def _kmeans_run(key, points, k, norm_ord, thresh=1e-5):
-
+@partial(jax.jit, static_argnums=(2,))
+def _kmeans_run(key, points, k, thresh=1e-5):
     def improve_centroids(val):
         prev_centroids, prev_distn, _ = val
-        assignment, distortions = _vector_quantize(points, prev_centroids, norm_ord)
+        assignment, distortions = _vector_quantize(points, prev_centroids)
 
         # Count number of points assigned per centroid
         counts = (
@@ -52,52 +69,51 @@ def _kmeans_run(key, points, k, norm_ord, thresh=1e-5):
     )
     return centroids, distortion
 
-@partial(jax.jit, static_argnums=(2, 3, 4))
-def _kmeans(key, points, k, norm_ord, restarts, **kwargs):
+@partial(jax.jit, static_argnums=(2, 3))
+def _kmeans(key, points, k, restarts, thresh):
     all_centroids, all_distortions = jax.vmap(
-        lambda key: _kmeans_run(key, points, k, norm_ord, **kwargs)
+        lambda key: _kmeans_run(key, points, k, thresh)
     )(jax.random.split(key, restarts))
     i = jnp.argmin(all_distortions)
     return all_centroids[i], all_distortions[i]
 
+
 class KMeans(ClusterMixin, BaseEstimator):
-    def __init__(self, n_clusters=8, norm_ord=2, tol=1e-5, random_state=42):
+    def __init__(self, n_clusters=8, tol=1e-5, random_state=42):
         self.n_clusters = n_clusters
-        self._norm_ord = norm_ord
         self._tol = tol
         self._key = jax.random.PRNGKey(random_state)
 
     def fit(self, X):
-        self.codebook, _ = _kmeans(self._key, X, self.n_clusters,
-                                  self._norm_ord, 1, thresh=self._tol)
+        self.codebook, _ = _kmeans(self._key, X,
+                                   self.n_clusters,
+                                   1, thresh=self._tol)
         return self
 
     def fit_predict(self, x):
         return self.fit(x).predict(x)
 
     def predict(self, X):
-        assignment, _ = _vector_quantize(X, self.codebook, 2)
+        assignment, _ = _vector_quantize(X, self.codebook)
         return assignment
 
 
 class KMeansPlusPlus(ClusterMixin, BaseEstimator):
-    def __init__(self, n_clusters=8, num_seeds=10, norm_ord=2,
+    def __init__(self, n_clusters=8, num_seeds=10,
                  tol=1e-5, random_state=42):
         self.n_clusters = n_clusters
         self.num_seeds = num_seeds
-        self._norm_ord = norm_ord
         self._tol = tol
         self._key = jax.random.PRNGKey(random_state)
 
     def fit(self, X):
         self.codebook, _ = _kmeans(self._key, X, self.n_clusters,
-                                  self._norm_ord, self.num_seeds,
-                                  thresh=self._tol)
+                                   self.num_seeds, thresh=self._tol)
         return self
 
     def fit_predict(self, x):
         return self.fit(x).predict(x)
 
     def predict(self, X):
-        assignment, _ = _vector_quantize(X, self.codebook, 2)
+        assignment, _ = _vector_quantize(X, self.codebook)
         return assignment
