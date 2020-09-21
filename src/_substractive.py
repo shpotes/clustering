@@ -48,7 +48,7 @@ def exp_dist(points, prototypes, radius):
         float[N, Np]
     """
 
-    cosine_dist = 1 - cosine_similarity(points, prototypes, axis=1)
+    cosine_dist = 1 - cosine_similarity(points, prototypes, norm_axis=1)
     return jnp.exp(-cosine_dist / (radius / 2)**2)
 
 @jax.jit
@@ -159,11 +159,8 @@ class Substractive(ClusterMixin, BaseEstimator):
     def predict(self, X):
         X = jnp.array(X, dtype=self._dtype)
 
-        norm = partial(jnp.linalg.norm, ord=self.norm_ord)
-        
-        assignment = jax.vmap(
-            lambda points: jnp.argmin(jax.vmap(norm)(self.clusters - points))
-        )(X)
+        dist_matrix = 1 - cosine_similarity(X, self.clusters, norm_axis=1)
+        assignment = jnp.argmin(dist_matrix, axis=1)
 
         self.labels_ = onp.array(assignment)
         return assignment
