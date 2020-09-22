@@ -87,18 +87,25 @@ def subtractive_update(r_a, val):
     near_cluster_density = cluster_mass * exp_dist(x, cluster, r_b)
 
     new_density = density - jnp.squeeze(near_cluster_density)
-    
-    new_cluster, cluster_density = get_cluster(x, new_density)
+
+    new_cluster, new_cluster_density = get_cluster(x, new_density)
 
     clusters = index_update(clusters, index[idx], jnp.squeeze(new_cluster))
 
-    val = (idx, x, density, clusters, cluster_density)
+    val = (idx, x, new_density, clusters, cluster_density)
 
     return val
 
 @partial(jax.jit, static_argnums=(0, 1))
 def stop(thresh, initial_state, state):
-    return (state[-1] / initial_state[-1]) > thresh
+    clusters = state[-2]
+    last_cluster = clusters[-2]
+
+    return ~jnp.isclose(
+        last_cluster, clusters, rtol=thresh
+    ).any() &  jnp.isclose(
+        state[-1], initial_state[-1], rtol=thresh
+    )
 
 @partial(jax.jit, static_argnums=(1, 2))
 def subtractive_run(x, r_a, thresh):
@@ -125,12 +132,18 @@ def subtractive_run(x, r_a, thresh):
         initial_state
     )
 
-    return state
+    """
+    state = initial_state
+    while stop(thresh, initial_state, state):
+        state = subtractive_update(r_a, state)
+    """
+
+    return state, initial_state
 
 
 class Substractive(ClusterMixin, BaseEstimator):
     def __init__(self, r_a=2, precision=16,
-                 tol=0.1, random_state=42):
+                 tol=0.001, random_state=42):
 
         assert precision in {16, 32}, 'wrong precision'
         self.r_a = r_a
@@ -142,15 +155,16 @@ class Substractive(ClusterMixin, BaseEstimator):
     def fit(self, X):
         x = jnp.array(X, dtype=self._dtype)
 
-        idx, x, density, clusters, cluster_density  = subtractive_run(
+        (idx, x, density, clusters, cluster_density), initial = subtractive_run(
             x, self.r_a, self.tol
         )
 
-        self.n_clusters = idx + 1
+        self.n_clusters = idx - 1
         self.density = density
         self.clusters = clusters[:self.n_clusters]
         self.cluster_density = cluster_density
-
+        self.initial_state = initial
+        
         return self
 
     def fit_predict(self, X):
