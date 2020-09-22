@@ -150,7 +150,7 @@ class Substractive(ClusterMixin, BaseEstimator):
         assert precision in {16, 32}, 'wrong precision'
         self.r_a = r_a
         self.tol = tol
-        self.r_b = r_a * 1.5 is r_b is None else r_b
+        self.r_b = r_a * 1.5 if r_b is None else r_b
 
         self._key = jax.random.PRNGKey(random_state)
         self._dtype = jnp.float16 if precision == 16 else jnp.float32
