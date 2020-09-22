@@ -76,9 +76,9 @@ def get_cluster(x, density):
     return cluster, density[cluster_idx]
 
 @partial(jax.jit, static_argnums=(0,))
-def subtractive_update(r_a, val):
+def subtractive_update(params, val):
     idx, x, density, clusters, cluster_density = val
-    r_b = 1.5 * r_a
+    r_a, r_b = params
 
     cluster = clusters[idx][jnp.newaxis, :]
     idx += 1
@@ -107,8 +107,8 @@ def stop(thresh, initial_state, state):
         state[-1], initial_state[-1], rtol=thresh
     )
 
-@partial(jax.jit, static_argnums=(1, 2))
-def subtractive_run(x, r_a, thresh):
+@partial(jax.jit, static_argnums=(1, 2, 3))
+def subtractive_run(x, r_a, r_b, thresh):
 
     density = density_function(x, x, r_a)
     cluster, cluster_density = get_cluster(x, density)
@@ -126,9 +126,11 @@ def subtractive_run(x, r_a, thresh):
 
     initial_state = (idx, x, density, clusters, cluster_density)
 
+    params = (r_a, r_b)
+    
     state = jax.lax.while_loop(
         partial(stop, thresh, initial_state),
-        partial(subtractive_update, r_a),
+        partial(subtractive_update, params),
         initial_state
     )
 
@@ -142,12 +144,13 @@ def subtractive_run(x, r_a, thresh):
 
 
 class Substractive(ClusterMixin, BaseEstimator):
-    def __init__(self, r_a=2, precision=16,
+    def __init__(self, r_a=2, r_b=None, precision=16,
                  tol=0.001, random_state=42):
 
         assert precision in {16, 32}, 'wrong precision'
         self.r_a = r_a
         self.tol = tol
+        self.r_b = r_a * 1.5 is r_b is None else r_b
 
         self._key = jax.random.PRNGKey(random_state)
         self._dtype = jnp.float16 if precision == 16 else jnp.float32
