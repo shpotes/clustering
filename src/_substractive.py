@@ -159,7 +159,7 @@ class Substractive(ClusterMixin, BaseEstimator):
         x = jnp.array(X, dtype=self._dtype)
 
         (idx, x, density, clusters, cluster_density), initial = subtractive_run(
-            x, self.r_a, self.tol
+            x, self.r_a, self.r_b, self.tol
         )
 
         self.n_clusters = idx - 1
