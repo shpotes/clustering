@@ -24,7 +24,7 @@ def compute_kmeans_distance(points, prototypes, norm_ord):
 def compute_kmeans_cost(points, prototypes, assignment, norm_ord):
     if norm_ord == 'cosine':
         dist_matrix = 1 - cosine_similarity(points, prototypes, norm_axis=1)
-        return dist_matrix[jnp.arange(len(assignment)), assignment]
+        return dist_matrix[jnp.arange(len(assignment)), assignment].mean()
 
     norm = partial(LA.norm, ord=norm_ord)
 

@@ -42,11 +42,11 @@ def _update_categorical_cluster(categorical_points, assignment, k):
     catdidates = jnp.where(
         assignment.reshape(-1, 1, 1) == jnp.arange(k).reshape(1, k, 1),
         categorical_points[:, jnp.newaxis, :],
-        1 << 8
+        255 # arbitrary uper bound
     )
 
     new_clusters = jnp.apply_along_axis(
-        lambda x: jnp.bincount(x, length=(1 << 8) - 10).argmax(),
+        lambda x: jnp.bincount(x, length=250).argmax(),
         axis=0,
         arr=catdidates
     )
@@ -68,40 +68,35 @@ def _kprototypes_run(key, numerical_points, categorical_points, k, gamma, norm_o
     def improve_centroids(k, gamma, norm_ord, state):
         (prev_numerical_proto, prev_categorical_proto), prev_assignemnt, _, _ = state
 
-        # TODO: fill missing values
-        _numerical_points = numerical_points
-        _categorical_points = categorical_points
-
         assignment, cost = _compute_assignments(
-            _numerical_points,
-            _categorical_points,
+            numerical_points,
+            categorical_points,
             prev_numerical_proto,
             prev_categorical_proto,
             norm_ord,
             gamma
         )
 
-        new_numerical_proto = _update_numerical_cluster(_numerical_points, assignment, k)
-        new_categorical_proto = _update_categorical_cluster(_categorical_points, assignment, k)
+        new_numerical_proto = _update_numerical_cluster(numerical_points, assignment, k)
+        new_categorical_proto = _update_categorical_cluster(categorical_points, assignment, k)
 
         return (
             (new_numerical_proto, new_categorical_proto),
             assignment, prev_assignemnt, cost
         )
 
-    num_points = numerical_points.shape[0]
-
-    initial_indices = jax.random.permutation(key, jnp.arange(num_points))[:k]
+    n_points = numerical_points.shape[0]
+    initial_indices = jax.random.permutation(key, jnp.arange(n_points))[:k]
     initial_numerical_centroids = numerical_points[initial_indices, :]
 
-    initial_indices = jax.random.permutation(key, jnp.arange(num_points))[:k]
+    initial_indices = jax.random.permutation(key, jnp.arange(n_points))[:k]
     initial_categorical_centroids = categorical_points[initial_indices, :]
 
     # state :: (centroids, assignment, prev_assignemnt)
     initial_state = (
         (initial_numerical_centroids, initial_categorical_centroids),
-        jnp.zeros(num_points, dtype=jnp.int32) - 1,
-        jnp.ones(num_points, dtype=jnp.int32),
+        jnp.zeros(n_points, dtype=jnp.int32) - 1,
+        jnp.ones(n_points, dtype=jnp.int32),
         jnp.inf
     )
 
