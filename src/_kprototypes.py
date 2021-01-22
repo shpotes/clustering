@@ -174,8 +174,8 @@ class KPrototypes:
 
         numerical_prototypes, categorical_prototypes = centroids
         self.centroid = onp.zeros_like(categorical_mask)
-        self.centroid[mask] = onp.array(categorical_prototypes)
-        self.centroid[~mask] = onp.array(numerical_prototypes)
+        self.centroid[categorical_mask] = onp.array(categorical_prototypes)
+        self.centroid[~categorical_mask] = onp.array(numerical_prototypes)
 
         return self
 
