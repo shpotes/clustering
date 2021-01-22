@@ -150,7 +150,7 @@ class KPrototypes:
         self.n_seeds = n_seeds
         self._key = jax.random.PRNGKey(random_state)
 
-        self.centroid = None
+        self.centroids = None
 
     def _compute_gamma(self, numerical_points):
         return onp.std(numerical_points, axis=0).mean()
@@ -173,9 +173,9 @@ class KPrototypes:
         )
 
         numerical_prototypes, categorical_prototypes = centroids
-        self.centroid = onp.zeros_like(categorical_mask)
-        self.centroid[categorical_mask] = onp.array(categorical_prototypes)
-        self.centroid[~categorical_mask] = onp.array(numerical_prototypes)
+        self.centroids = onp.zeros((self.n_clusters, len(categorical_mask)))
+        self.centroids[:, categorical_mask] = onp.array(categorical_prototypes)
+        self.centroids[:, ~categorical_mask] = onp.array(numerical_prototypes)
 
         return self
 
@@ -186,8 +186,8 @@ class KPrototypes:
         assignment, cost = _compute_assignments(
             numerical_points,
             categorical_points,
-            self.numerical_prototypes,
-            self.categorical_prototypes,
+            self.centroids[:, ~categorical_mask],
+            self.centroids[:, categorical_mask],
             self.norm_ord,
             self.gamma
         )
